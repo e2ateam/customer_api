@@ -1,0 +1,126 @@
+version: '3'
+services:
+    customer_api:
+        build:
+            context: ./vendor/laravel/sail/runtimes/8.2
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: sail-8.2/app
+        container_name: customer_api
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            - '${APP_PORT:-80}:80'
+            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
+            XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - condominio_backend
+        depends_on:
+            - customer_api_mysql
+            - customer_api_redis
+            - customer_api_meilisearch
+            - customer_api_mailpit
+            - customer_api_selenium
+
+    customer_api_mysql:        
+        image: 'mysql:latest'
+        container_name: customer_api_db
+        ports:
+            - '${FORWARD_DB_PORT:-3306}:${DB_PORT}'
+        expose:
+            - '${FORWARD_DB_PORT:-3306}'    
+        environment:
+            MYSQL_TZ: '${DB_TZ}'
+            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_TCP_PORT: '${DB_PORT}'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 1
+        volumes:
+            - './docker/storage/mysql:/var/lib/mysql'
+            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+        networks:
+            - condominio_backend
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-p${DB_PASSWORD}'
+            retries: 3
+            timeout: 5s
+
+    customer_api_redis:
+        image: 'redis:alpine'
+        container_name: customer_api_redis
+        ports:
+            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        volumes:
+            - './docker/storage/redis:/data'
+        networks:
+            - condominio_backend
+        healthcheck:
+            test:
+                - CMD
+                - redis-cli
+                - ping
+            retries: 3
+            timeout: 5s
+
+    customer_api_meilisearch:
+        image: 'getmeili/meilisearch:latest'
+        container_name: customer_api_emilisearch
+        ports:
+            - '${FORWARD_MEILISEARCH_PORT:-7700}:7700'
+        volumes:
+            - 'customer_api_meilisearch:/meili_data'
+        networks:
+            - condominio_backend
+        healthcheck:
+            test:
+                - CMD
+                - wget
+                - '--no-verbose'
+                - '--spider'
+                - 'http://localhost:7700/health'
+            retries: 3
+            timeout: 5s
+
+    customer_api_mailpit:
+        image: 'axllent/mailpit:latest'
+        container_name: customer_api_mailpit
+        ports:
+            - '${FORWARD_MAILPIT_PORT:-1025}:1025'
+            - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
+        networks:
+            - condominio_backend
+
+    customer_api_selenium:
+        image: selenium/standalone-chrome
+        container_name: customer_api_selenium
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        volumes:
+            - '/dev/shm:/dev/shm'
+        networks:
+            - condominio_backend
+
+networks:
+    condominio_backend:
+        driver: bridge
+volumes:
+    customer_api_mysql:
+        driver: local
+    customer_api_redis:
+        driver: local
+    customer_api_meilisearch:
+        driver: local
